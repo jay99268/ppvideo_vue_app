@@ -1,0 +1,16 @@
+<svg width="100" height="100" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <!-- 定义渐变色 -->
+  <defs>
+    <linearGradient id="flowGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#818cf8; stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#c084fc; stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- 绘制形状 -->
+  <path 
+    d="M20 10 L20 90 L80 50 Z" 
+    fill="url(#flowGradient)" 
+    transform="skewX(-10)"
+  />
+</svg>

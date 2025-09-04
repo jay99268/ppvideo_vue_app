@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>流光影院 - Vue 应用</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- 引入 Google Fonts - Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- 引入 Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- 自定义样式 -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #111827; /* 深灰色背景 */
+            color: #d1d5db; /* 浅灰色文字 */
+        }
+        /* 自定义滚动条样式 */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1f2937;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #4b5563;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #6b7280;
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <!-- Vue 应用的挂载点 -->
+    <div id="app"></div>
+
+    <!-- 
+      模块化引入依赖。
+      在生产环境中，这些应该通过构建工具（如 Vite）进行打包。
+      为了演示，我们使用 import-maps 和 CDN。
+    -->
+    <script type="importmap">
+    {
+        "imports": {
+            "vue": "https://unpkg.com/vue@3/dist/vue.esm-browser.js",
+            "vue-router": "https://unpkg.com/vue-router@4/dist/vue-router.esm-browser.js",
+            "pinia": "https://unpkg.com/pinia@2/dist/pinia.esm-browser.js",
+            "axios": "https://unpkg.com/axios/dist/esm/axios.js"
+        }
+    }
+    </script>
+
+    <!-- 
+      将所有 JavaScript 模块整合到单个 script 块中
+      以避免浏览器发起不必要的文件请求。
+    -->
+    <script type="module">
+        import { createApp, ref, computed, onMounted } from 'vue';
+        import { createRouter, createWebHashHistory, useRoute, useRouter } from 'vue-router';
+        import { createPinia, defineStore } from 'pinia';
+        import axios from 'axios';
+
+        // =================================================================
+        // 模块: api/index.js (Axios 配置)
+        // =================================================================
+        const api = axios.create({
+            baseURL: 'http://localhost:5025/api', 
+            timeout: 10000,
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        // =================================================================
+        // 模块: store/auth.js (Pinia 认证状态)
+        // =================================================================
+        const useAuthStore = defineStore('auth', () => {
+            const user = ref(null);
+            const token = ref(localStorage.getItem('token') || null);
+
+            const isAuthenticated = computed(() => !!token.value && !!user.value);
+            const username = computed(() => user.value?.username || 'Guest');
+
+            async function login(credentials) {
+                try {
+                    const response = await api.post('/auth/login', credentials);
+                    const data = response.data;
+                    
+                    token.value = data.token;
+                    user.value = {
+                        username: data.username,
+                        email: data.email,
+                        vipStatus: data.vipStatus,
+                        vipExpiresAt: data.vipExpiresAt
+                    };
+
+                    localStorage.setItem('token', token.value);
+                    localStorage.setItem('user', JSON.stringify(user.value));
+                    
+                    api.defaults.headers.common['Authorization'] = `Bearer ${token.value}`;
+                    return true;
+                } catch (error) {
+                    console.error("登录失败:", error.response?.data || error.message);
+                    await logout(); // 登录失败时清理状态
+                    return false;
+                }
+            }
+
+            async function logout() {
+                user.value = null;
+                token.value = null;
+                localStorage.removeItem('token');
+                localStorage.removeItem('user');
+                delete api.defaults.headers.common['Authorization'];
+                // 使用 await router.isReady() 确保路由初始化完毕
+                await router.isReady();
+                router.push({ name: 'Home' });
+            }
+
+            function tryAutoLogin() {
+                const storedToken = localStorage.getItem('token');
+                const storedUser = localStorage.getItem('user');
+                if (storedToken && storedUser) {
+                    token.value = storedToken;
+                    user.value = JSON.parse(storedUser);
+                    api.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
+                }
+            }
+
+            return { user, token, isAuthenticated, username, login, logout, tryAutoLogin };
+        });
+
+        // =================================================================
+        // 模块: components/layout/TheFooter.js
+        // =================================================================
+        const TheFooter = {
+            template: `
+                <footer class="bg-gray-800 border-t border-gray-700 mt-auto">
+                    <div class="container mx-auto py-6 px-4 text-center text-gray-400 text-sm">
+                        <p>&copy; ${new Date().getFullYear()} 流光影院. All Rights Reserved.</p>
+                        <p class="mt-2">本项目仅用于学习和演示目的。</p>
+                    </div>
+                </footer>
+            `
+        };
+
+        // =================================================================
+        // 模块: components/layout/TheHeader.js
+        // =================================================================
+        const TheHeader = {
+            setup() {
+                const authStore = useAuthStore();
+                return { authStore };
+            },
+            template: `
+                <header class="bg-gray-800/80 backdrop-blur-sm shadow-lg sticky top-0 z-50">
+                    <nav class="container mx-auto px-4 sm:px-6 lg:px-8">
+                        <div class="flex items-center justify-between h-16">
+                            <div class="flex items-center">
+                                <router-link to="/" class="flex-shrink-0 text-white text-2xl font-bold flex items-center">
+                                    <i data-lucide="film" class="mr-2 text-indigo-400"></i>
+                                    流光影院
+                                </router-link>
+                                <div class="hidden md:block">
+                                    <div class="ml-10 flex items-baseline space-x-4">
+                                        <router-link to="/" class="text-gray-300 hover:bg-gray-700 hover:text-white px-3 py-2 rounded-md text-sm font-medium" active-class="bg-gray-900 text-white">首页</router-link>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="flex items-center">
+                                <div v-if="authStore.isAuthenticated" class="flex items-center space-x-4">
+                                    <span class="text-sm text-gray-400">欢迎, {{ authStore.username }}</span>
+                                    <router-link to="/profile" class="text-gray-300 hover:bg-gray-700 p-2 rounded-full">
+                                        <i data-lucide="user-circle"></i>
+                                    </router-link>
+                                    <button @click="authStore.logout()" class="text-gray-300 hover:bg-gray-700 p-2 rounded-full">
+                                        <i data-lucide="log-out"></i>
+                                    </button>
+                                </div>
+                                <div v-else>
+                                    <router-link to="/login" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors">
+                                        登录 / 注册
+                                    </router-link>
+                                </div>
+                            </div>
+                        </div>
+                    </nav>
+                </header>
+            `
+        };
+
+        // =================================================================
+        // 模块: views/Home.js
+        // =================================================================
+        const Home = {
+            template: `
+                <div class="text-center">
+                    <h1 class="text-4xl font-bold text-white mb-4">欢迎来到流光影院</h1>
+                    <p class="text-lg text-gray-400">在这里发现精彩的电影世界。</p>
+                </div>
+            `
+        };
+
+        // =================================================================
+        // 模块: views/Login.js
+        // =================================================================
+        const Login = {
+            setup() {
+                const email = ref('');
+                const password = ref('');
+                const error = ref(null);
+                const isLoading = ref(false);
+
+                const authStore = useAuthStore();
+                const router = useRouter();
+                const route = useRoute();
+
+                async function handleLogin() {
+                    isLoading.value = true;
+                    error.value = null;
+                    const success = await authStore.login({ email: email.value, password: password.value });
+                    isLoading.value = false;
+                    
+                    if (success) {
+                        const redirectPath = route.query.redirect || '/';
+                        router.push(redirectPath);
+                    } else {
+                        error.value = "邮箱或密码错误，请重试。";
+                    }
+                }
+
+                return { email, password, error, isLoading, handleLogin };
+            },
+            template: `
+                <div class="max-w-md mx-auto bg-gray-800 p-8 rounded-lg shadow-xl">
+                    <h2 class="text-2xl font-bold text-center text-white mb-6">用户登录</h2>
+                    <form @submit.prevent="handleLogin">
+                        <div class="mb-4">
+                            <label for="email" class="block text-gray-400 text-sm font-bold mb-2">邮箱</label>
+                            <input v-model="email" type="email" id="email" class="shadow appearance-none border border-gray-700 rounded w-full py-2 px-3 bg-gray-700 text-white leading-tight focus:outline-none focus:ring-2 focus:ring-indigo-500" required>
+                        </div>
+                        <div class="mb-6">
+                            <label for="password" class="block text-gray-400 text-sm font-bold mb-2">密码</label>
+                            <input v-model="password" type="password" id="password" class="shadow appearance-none border border-gray-700 rounded w-full py-2 px-3 bg-gray-700 text-white leading-tight focus:outline-none focus:ring-2 focus:ring-indigo-500" required>
+                        </div>
+                        <div v-if="error" class="mb-4 text-red-400 text-sm text-center">
+                            {{ error }}
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <button :disabled="isLoading" type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline transition-colors disabled:bg-indigo-400 disabled:cursor-not-allowed flex items-center justify-center">
+                                <span v-if="!isLoading">登录</span>
+                                <span v-else class="flex items-center">
+                                    <i data-lucide="loader-2" class="animate-spin mr-2"></i>
+                                    登录中...
+                                </span>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            `
+        };
+
+        // =================================================================
+        // 模块: views/Profile.js
+        // =================================================================
+        const Profile = {
+            setup() {
+                const authStore = useAuthStore();
+                return { user: authStore.user };
+            },
+            template: `
+                <div class="bg-gray-800 p-8 rounded-lg shadow-xl">
+                    <h1 class="text-3xl font-bold text-white mb-6">个人中心</h1>
+                    <div v-if="user" class="space-y-4">
+                        <p><strong class="text-gray-400">用户名:</strong> <span class="text-white">{{ user.username }}</span></p>
+                        <p><strong class="text-gray-400">邮箱:</strong> <span class="text-white">{{ user.email }}</span></p>
+                        <p><strong class="text-gray-400">VIP状态:</strong> <span class="text-indigo-400 font-bold uppercase">{{ user.vipStatus }}</span></p>
+                        <p v-if="user.vipExpiresAt"><strong class="text-gray-400">VIP到期时间:</strong> <span class="text-white">{{ new Date(user.vipExpiresAt).toLocaleString() }}</span></p>
+                    </div>
+                </div>
+            `
+        };
+
+        // =================================================================
+        // 模块: views/NotFound.js
+        // =================================================================
+        const NotFound = {
+            template: `
+                <div class="text-center py-20">
+                    <h1 class="text-9xl font-bold text-indigo-400">404</h1>
+                    <h2 class="text-3xl font-semibold text-white mt-4">页面未找到</h2>
+                    <p class="text-gray-400 mt-2">抱歉，您要查找的页面不存在。</p>
+                    <router-link to="/" class="mt-8 inline-block bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg transition-colors">
+                        返回首页
+                    </router-link>
+                </div>
+            `
+        };
+
+        // =================================================================
+        // 模块: router/index.js (路由配置)
+        // =================================================================
+        const routes = [
+            { path: '/', name: 'Home', component: Home },
+            { path: '/login', name: 'Login', component: Login },
+            { 
+                path: '/profile', 
+                name: 'Profile', 
+                component: Profile,
+                meta: { requiresAuth: true }
+            },
+            { path: '/:pathMatch(.*)*', name: 'NotFound', component: NotFound }
+        ];
+
+        const router = createRouter({
+            history: createWebHashHistory(),
+            routes,
+        });
+
+        // =================================================================
+        // 模块: App.js (根组件)
+        // =================================================================
+        const App = {
+            components: { TheHeader, TheFooter },
+            template: `
+                <div class="min-h-screen flex flex-col bg-gray-900 text-gray-300">
+                    <TheHeader />
+                    <main class="flex-grow container mx-auto px-4 py-8">
+                        <router-view></router-view>
+                    </main>
+                    <TheFooter />
+                </div>
+            `
+        };
+
+        // =================================================================
+        // 应用入口 (main.js)
+        // =================================================================
+        const pinia = createPinia();
+        const app = createApp(App);
+
+        // ** 修复: 禁用 Vue Devtools 来避免内部模块解析错误 **
+        app.config.devtools = false;
+
+        app.use(pinia);
+        
+        // 关键：在挂载路由之前，尝试从 localStorage 恢复登录状态
+        const authStore = useAuthStore();
+        authStore.tryAutoLogin();
+
+        // 响应拦截器需要在这里配置，因为它依赖于 Pinia store
+        api.interceptors.response.use(response => response, 
+            error => {
+                if (error.response && error.response.status === 401) {
+                    authStore.logout();
+                    console.error("认证失败，已自动登出。");
+                }
+                return Promise.reject(error);
+            }
+        );
+
+        // 全局导航守卫
+        router.beforeEach((to, from, next) => {
+            if (to.meta.requiresAuth && !authStore.isAuthenticated) {
+                next({ name: 'Login', query: { redirect: to.fullPath } });
+            } else {
+                next();
+            }
+        });
+
+        app.use(router);
+        app.mount('#app');
+
+        // 全局混入，用于在组件更新后重新渲染 Lucide 图标
+        app.mixin({
+            updated() {
+                lucide.createIcons();
+            },
+            mounted() {
+                lucide.createIcons();
+            }
+        });
+
+    </script>
+</body>
+</html>
